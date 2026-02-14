@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import subprocess
+import shutil
 from datetime import date, timedelta
 
 import pandas as pd
@@ -31,6 +33,24 @@ from dip_catcher.models import (
 from dip_catcher.sources import get_source
 
 logger = logging.getLogger(__name__)
+
+
+def _ensure_playwright_browser() -> None:
+    """Playwright の Chromium がインストールされていなければインストールする。"""
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as pw:
+            pw.chromium.launch(headless=True).close()
+    except Exception:
+        logger.info("Installing Playwright Chromium browser...")
+        subprocess.run(
+            ["playwright", "install", "chromium"],
+            check=True,
+            capture_output=True,
+        )
+
+
+_ensure_playwright_browser()
 
 _CATEGORY_LABELS = {
     AssetCategory.US_STOCK: "米国株・ETF",

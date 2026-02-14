@@ -1,96 +1,146 @@
+"""日本の投資信託データの取得 (Yahoo!ファイナンスJP)。
+
+Playwright でページを描画し、ページネーション操作で BFF API レスポンスを
+キャプチャして基準価額を取得する。
+"""
+
 from __future__ import annotations
 
-import json
 import logging
 import re
-import time
 from datetime import date
 
 import pandas as pd
-import requests
 
 logger = logging.getLogger(__name__)
 
 _BASE_URL = "https://finance.yahoo.co.jp/quote/{code}/history"
-_REQUEST_INTERVAL = 1.0
-_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
-    )
-}
-_STATE_PATTERN = re.compile(r"window\.__PRELOADED_STATE__\s*=\s*({.+?});?\s*</script>", re.DOTALL)
-_MAX_PAGES = 200
+_MAX_PAGES = 100
+_NAV_WAIT_MS = 2000
 
 
 class YahooJPSource:
-    """日本の投資信託データのスクレイピング (Yahoo!ファイナンスJP)。
-
-    ページはJS描画のため、埋め込みJSON (window.__PRELOADED_STATE__) からデータを抽出する。
-    """
+    """日本の投資信託データのスクレイピング (Yahoo!ファイナンスJP)。"""
 
     def fetch(self, code: str, start: date, end: date) -> pd.DataFrame:
+        from playwright.sync_api import sync_playwright
+
         all_rows: list[dict[str, object]] = []
-        page = 1
-        while page <= _MAX_PAGES:
-            rows = self._fetch_page(code, page)
-            if not rows:
-                break
 
-            reached_start = False
-            for row in rows:
-                row_date = pd.Timestamp(row["date"]).date()
-                if row_date < start:
-                    reached_start = True
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            page = browser.new_page()
+
+            # BFF API レスポンスをキャプチャ
+            captured: list[dict] = []
+
+            def _on_response(response: object) -> None:
+                url = response.url
+                if "history" in url and "bff" in url:
+                    try:
+                        captured.append(response.json())
+                    except Exception:
+                        pass
+
+            page.on("response", _on_response)
+
+            page.goto(_BASE_URL.format(code=code))
+            page.wait_for_load_state("networkidle")
+            page.wait_for_timeout(_NAV_WAIT_MS)
+
+            # ページ1: HTMLテーブルから抽出（BFF APIは初回読込では呼ばれない）
+            rows = self._extract_table(page)
+            all_rows.extend(rows)
+
+            # ページ2以降: 「次へ」をクリックしてBFF APIレスポンスをキャプチャ
+            for _ in range(2, _MAX_PAGES + 1):
+                next_btn = page.locator("p").filter(has_text="次へ").first
+                if not next_btn.is_visible():
                     break
-                if row_date <= end:
-                    all_rows.append(row)
+                classes = next_btn.get_attribute("class") or ""
+                if "disabled" in classes:
+                    break
 
-            if reached_start:
-                break
+                captured.clear()
+                next_btn.click()
+                page.wait_for_timeout(_NAV_WAIT_MS)
+                page.wait_for_load_state("networkidle")
+                page.wait_for_timeout(500)
 
-            page += 1
-            time.sleep(_REQUEST_INTERVAL)
+                # BFF API レスポンスからデータ抽出
+                if captured:
+                    new_rows = self._parse_bff_response(captured[-1])
+                    if not new_rows:
+                        break
+                    all_rows.extend(new_rows)
+
+                    # start 日より前のデータが出たら終了
+                    earliest = min(r["date"] for r in new_rows)
+                    if pd.Timestamp(earliest).date() <= start:
+                        break
+
+                    paging = captured[-1].get("paging", {})
+                    if not paging.get("hasNext", False):
+                        break
+                else:
+                    # BFF API が呼ばれなかった場合はテーブルから再抽出
+                    rows = self._extract_table(page)
+                    if not rows:
+                        break
+                    all_rows.extend(rows)
+
+            browser.close()
 
         if not all_rows:
             raise ValueError(f"No data scraped from Yahoo JP for {code}")
 
         df = pd.DataFrame(all_rows)
         df["date"] = pd.to_datetime(df["date"])
-        return df[["date", "close"]].sort_values("date").reset_index(drop=True)
+        df = df.drop_duplicates(subset=["date"]).sort_values("date").reset_index(drop=True)
 
-    def _fetch_page(self, code: str, page: int) -> list[dict[str, object]]:
-        url = _BASE_URL.format(code=code)
-        params = {"p": page}
-        resp = requests.get(url, params=params, headers=_HEADERS, timeout=15)
-        resp.raise_for_status()
+        # 期間でフィルタ
+        mask = (df["date"].dt.date >= start) & (df["date"].dt.date <= end)
+        result = df.loc[mask, ["date", "close"]].reset_index(drop=True)
+        if result.empty:
+            raise ValueError(f"No data in range for {code}")
+        return result
 
-        match = _STATE_PATTERN.search(resp.text)
-        if match is None:
-            return []
+    def _extract_table(self, page: object) -> list[dict[str, object]]:
+        """HTMLテーブルから日付と基準価額を抽出する。"""
+        rows = page.locator("table tbody tr").all()
+        data: list[dict[str, object]] = []
+        for row in rows:
+            cells = row.locator("td").all()
+            if len(cells) < 2:
+                continue
+            date_text = cells[0].text_content().strip()
+            price_text = cells[1].text_content().strip()
+            m = re.match(r"(\d{4})年(\d{1,2})月(\d{1,2})日", date_text)
+            if m:
+                d = date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+                try:
+                    close = float(price_text.replace(",", ""))
+                except ValueError:
+                    continue
+                data.append({"date": pd.Timestamp(d), "close": close})
+        return data
 
-        try:
-            state = json.loads(match.group(1))
-        except json.JSONDecodeError:
-            logger.warning("Failed to parse __PRELOADED_STATE__ for %s page %d", code, page)
-            return []
-
-        histories = (
-            state.get("mainFundHistory", {}).get("histories")
-            or state.get("mainHistory", {}).get("histories")
-        )
-        if not histories:
-            return []
-
-        rows: list[dict[str, object]] = []
+    def _parse_bff_response(self, body: dict) -> list[dict[str, object]]:
+        """BFF API のレスポンスから基準価額データを抽出する。"""
+        histories = body.get("histories", [])
+        data: list[dict[str, object]] = []
         for entry in histories:
             try:
-                date_text = entry["date"]
-                price_text = str(entry.get("price", entry.get("close", ""))).replace(",", "")
-                row_date = pd.to_datetime(date_text, format="%Y年%m月%d日")
-                close_val = float(price_text)
-                rows.append({"date": row_date, "close": close_val})
-            except (ValueError, KeyError):
+                date_str = entry.get("date", "")
+                m = re.match(r"(\d{4})年(\d{1,2})月(\d{1,2})日", date_str)
+                if not m:
+                    continue
+                d = date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+                price = entry.get("price", entry.get("close"))
+                if price is None:
+                    continue
+                close = float(str(price).replace(",", ""))
+                data.append({"date": pd.Timestamp(d), "close": close})
+            except (ValueError, TypeError):
                 continue
-        return rows
+        return data

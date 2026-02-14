@@ -13,12 +13,20 @@ else:
 
 from pydantic import ValidationError
 
-from dip_catcher.models import AppConfig
+from dip_catcher.models import AppConfig, AssetCategory, WatchlistItem
 
 logger = logging.getLogger(__name__)
 
 CONFIG_DIR = Path.home() / ".dip_catcher"
 CONFIG_PATH = CONFIG_DIR / "config.toml"
+
+
+_DEFAULT_WATCHLIST = [
+    WatchlistItem(code="02315228", name="Tracers S&P500ゴールドプラス", category=AssetCategory.JP_FUND),
+    WatchlistItem(code="02311251", name="Tracers NASDAQ100ゴールドプラス", category=AssetCategory.JP_FUND),
+    WatchlistItem(code="QQQ", name="Invesco QQQ Trust", category=AssetCategory.US_STOCK),
+    WatchlistItem(code="^GSPC", name="S&P 500", category=AssetCategory.INDEX),
+]
 
 
 def load_config(path: Path | None = None) -> AppConfig:
@@ -28,7 +36,9 @@ def load_config(path: Path | None = None) -> AppConfig:
     """
     config_path = path or CONFIG_PATH
     if not config_path.exists():
-        return AppConfig()
+        config = AppConfig(watchlist=list(_DEFAULT_WATCHLIST))
+        save_config(config, config_path)
+        return config
     try:
         raw = tomllib.loads(config_path.read_text(encoding="utf-8"))
         return AppConfig.model_validate(raw)
