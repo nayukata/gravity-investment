@@ -202,6 +202,7 @@ class AnalysisResult:
     total_score: float  # 0〜100
     label: str  # 判定ラベル
     current_drawdown: float  # 現在のドローダウン値
+    current_daily_return: float  # 直近日次リターン（前日比）
     current_rsi: float
     current_ma_deviation: float
     current_bb_percent_b: float
@@ -331,6 +332,7 @@ def analyze(history: PriceHistory, config: AnalysisConfig) -> AnalysisResult:
         total_score=total,
         label=_label_from_score(total),
         current_drawdown=current_dd,
+        current_daily_return=current_ret,
         current_rsi=current_rsi,
         current_ma_deviation=current_ma_dev,
         current_bb_percent_b=current_bb,

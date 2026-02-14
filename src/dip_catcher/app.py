@@ -250,15 +250,18 @@ def _render_summary(item: WatchlistItem, history: PriceHistory, result: Analysis
     label_color = _LABEL_COLORS.get(result.label, "#6b7280")
     sym = _currency_symbol(item.category)
 
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
         st.metric("基準価額", f"{sym}{history.latest_close:,.0f}")
     with col2:
+        daily_ret_pct = result.current_daily_return * 100
+        st.metric("前日比", f"{daily_ret_pct:+.2f}%")
+    with col3:
         dd_pct = result.current_drawdown * 100
         st.metric("高値からの下落率", f"{dd_pct:+.1f}%")
-    with col3:
-        st.metric("総合スコア", f"{result.total_score:.0f} / 100")
     with col4:
+        st.metric("総合スコア", f"{result.total_score:.0f} / 100")
+    with col5:
         st.markdown(
             f"<div style='text-align:center;padding:0.5rem;'>"
             f"<span style='font-size:0.8rem;color:#888;'>判定</span><br>"
