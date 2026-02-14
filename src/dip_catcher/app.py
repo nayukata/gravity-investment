@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import subprocess
-import shutil
 from datetime import date, timedelta
 
 import pandas as pd
@@ -35,22 +34,30 @@ from dip_catcher.sources import get_source
 logger = logging.getLogger(__name__)
 
 
+_playwright_checked = False
+
+
 def _ensure_playwright_browser() -> None:
     """Playwright の Chromium がインストールされていなければインストールする。"""
+    global _playwright_checked
+    if _playwright_checked:
+        return
     try:
         from playwright.sync_api import sync_playwright
         with sync_playwright() as pw:
             pw.chromium.launch(headless=True).close()
     except Exception:
         logger.info("Installing Playwright Chromium browser...")
-        subprocess.run(
-            ["playwright", "install", "chromium"],
-            check=True,
-            capture_output=True,
-        )
-
-
-_ensure_playwright_browser()
+        try:
+            subprocess.run(
+                ["playwright", "install", "chromium"],
+                check=True,
+                capture_output=True,
+                timeout=300,
+            )
+        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired) as e:
+            logger.error("Failed to install Playwright Chromium: %s", e)
+    _playwright_checked = True
 
 _CATEGORY_LABELS = {
     AssetCategory.US_STOCK: "米国株・ETF",
@@ -68,6 +75,7 @@ _LABEL_COLORS = {
 
 
 def main() -> None:
+    _ensure_playwright_browser()
     st.set_page_config(page_title="Dip Catcher", page_icon="📉", layout="wide")
     st.title("📉 Dip Catcher")
     st.caption("統計的確率に基づく押し目買いシグナル")

@@ -9,8 +9,12 @@ from __future__ import annotations
 import logging
 import re
 from datetime import date
+from typing import TYPE_CHECKING
 
 import pandas as pd
+
+if TYPE_CHECKING:
+    from playwright.sync_api import Page, Response
 
 logger = logging.getLogger(__name__)
 
@@ -29,67 +33,69 @@ class YahooJPSource:
 
         with sync_playwright() as pw:
             browser = pw.chromium.launch(headless=True)
-            page = browser.new_page()
+            try:
+                page = browser.new_page()
 
-            # BFF API レスポンスをキャプチャ
-            captured: list[dict] = []
+                # BFF API レスポンスをキャプチャ
+                captured: list[dict] = []
 
-            def _on_response(response: object) -> None:
-                url = response.url
-                if "history" in url and "bff" in url:
-                    try:
-                        captured.append(response.json())
-                    except Exception:
-                        pass
+                def _on_response(response: Response) -> None:
+                    url = response.url
+                    if "/bff/" in url and "/history" in url:
+                        try:
+                            captured.append(response.json())
+                        except Exception:
+                            logger.debug("Failed to parse BFF response from %s", url)
 
-            page.on("response", _on_response)
+                page.on("response", _on_response)
 
-            page.goto(_BASE_URL.format(code=code))
-            page.wait_for_load_state("networkidle")
-            page.wait_for_timeout(_NAV_WAIT_MS)
-
-            # ページ1: HTMLテーブルから抽出（BFF APIは初回読込では呼ばれない）
-            rows = self._extract_table(page)
-            all_rows.extend(rows)
-
-            # ページ2以降: 「次へ」をクリックしてBFF APIレスポンスをキャプチャ
-            for _ in range(2, _MAX_PAGES + 1):
-                next_btn = page.locator("p").filter(has_text="次へ").first
-                if not next_btn.is_visible():
-                    break
-                classes = next_btn.get_attribute("class") or ""
-                if "disabled" in classes:
-                    break
-
-                captured.clear()
-                next_btn.click()
-                page.wait_for_timeout(_NAV_WAIT_MS)
+                page.goto(_BASE_URL.format(code=code))
                 page.wait_for_load_state("networkidle")
-                page.wait_for_timeout(500)
+                page.wait_for_timeout(_NAV_WAIT_MS)
 
-                # BFF API レスポンスからデータ抽出
-                if captured:
-                    new_rows = self._parse_bff_response(captured[-1])
-                    if not new_rows:
-                        break
-                    all_rows.extend(new_rows)
+                # ページ1: HTMLテーブルから抽出（BFF APIは初回読込では呼ばれない）
+                rows = self._extract_table(page)
+                all_rows.extend(rows)
 
-                    # start 日より前のデータが出たら終了
-                    earliest = min(r["date"] for r in new_rows)
-                    if pd.Timestamp(earliest).date() <= start:
+                # ページ2以降: 「次へ」をクリックしてBFF APIレスポンスをキャプチャ
+                for _ in range(2, _MAX_PAGES + 1):
+                    # セレクタ: Yahoo Finance JP の履歴ページのページネーション要素
+                    next_btn = page.locator("p").filter(has_text="次へ").first
+                    if not next_btn.is_visible():
+                        break
+                    classes = next_btn.get_attribute("class") or ""
+                    if "disabled" in classes:
                         break
 
-                    paging = captured[-1].get("paging", {})
-                    if not paging.get("hasNext", False):
-                        break
-                else:
-                    # BFF API が呼ばれなかった場合はテーブルから再抽出
-                    rows = self._extract_table(page)
-                    if not rows:
-                        break
-                    all_rows.extend(rows)
+                    captured.clear()
+                    next_btn.click()
+                    page.wait_for_timeout(_NAV_WAIT_MS)
+                    page.wait_for_load_state("networkidle")
+                    page.wait_for_timeout(500)
 
-            browser.close()
+                    # BFF API レスポンスからデータ抽出
+                    if captured:
+                        new_rows = self._parse_bff_response(captured[-1])
+                        if not new_rows:
+                            break
+                        all_rows.extend(new_rows)
+
+                        # start 日より前のデータが出たら終了
+                        earliest = min(r["date"] for r in new_rows)
+                        if pd.Timestamp(earliest).date() <= start:
+                            break
+
+                        paging = captured[-1].get("paging", {})
+                        if not paging.get("hasNext", False):
+                            break
+                    else:
+                        # BFF API が呼ばれなかった場合はテーブルから再抽出
+                        rows = self._extract_table(page)
+                        if not rows:
+                            break
+                        all_rows.extend(rows)
+            finally:
+                browser.close()
 
         if not all_rows:
             raise ValueError(f"No data scraped from Yahoo JP for {code}")
@@ -105,7 +111,7 @@ class YahooJPSource:
             raise ValueError(f"No data in range for {code}")
         return result
 
-    def _extract_table(self, page: object) -> list[dict[str, object]]:
+    def _extract_table(self, page: Page) -> list[dict[str, object]]:
         """HTMLテーブルから日付と基準価額を抽出する。"""
         rows = page.locator("table tbody tr").all()
         data: list[dict[str, object]] = []

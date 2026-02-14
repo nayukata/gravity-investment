@@ -37,7 +37,10 @@ def load_config(path: Path | None = None) -> AppConfig:
     config_path = path or CONFIG_PATH
     if not config_path.exists():
         config = AppConfig(watchlist=list(_DEFAULT_WATCHLIST))
-        save_config(config, config_path)
+        try:
+            save_config(config, config_path)
+        except OSError:
+            logger.warning("Failed to save default config to %s", config_path)
         return config
     try:
         raw = tomllib.loads(config_path.read_text(encoding="utf-8"))
