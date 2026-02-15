@@ -13,7 +13,7 @@ import streamlit as st
 from plotly.subplots import make_subplots
 from pydantic import ValidationError
 
-from dip_catcher.config import load_config, save_config
+from dip_catcher.config import PRESET_ITEMS, load_config, save_config
 from dip_catcher.market import render_market_overview
 from dip_catcher.logic import (
     AnalysisResult,
@@ -121,7 +121,7 @@ def main() -> None:
     config, selected = _render_sidebar(config)
 
     if not config.watchlist:
-        st.info("サイドバーから銘柄を登録してください。")
+        st.info("サイドバーの「銘柄を追加」→「プリセット」から人気の銘柄を追加できます。")
         return
 
     if selected is None:
@@ -165,8 +165,12 @@ def _render_sidebar(config: AppConfig) -> tuple[AppConfig, WatchlistItem | None]
         st.header("監視リスト")
         selected = _render_watchlist(config)
 
-        with st.expander("銘柄を追加"):
-            _render_add_form(config)
+        with st.expander("銘柄を追加", expanded=not config.watchlist):
+            tab_preset, tab_custom = st.tabs(["プリセット", "カスタム"])
+            with tab_preset:
+                _render_preset_picker(config)
+            with tab_custom:
+                _render_add_form(config)
 
         st.divider()
         st.header("分析設定")
@@ -205,30 +209,55 @@ def _render_add_form(config: AppConfig) -> None:
             st.rerun()
 
 
+def _render_preset_picker(config: AppConfig) -> None:
+    existing_codes = {w.code for w in config.watchlist}
+    for category, items in PRESET_ITEMS.items():
+        st.caption(_CATEGORY_LABELS[category])
+        for item in items:
+            col_name, col_btn = st.columns([4, 1])
+            with col_name:
+                st.markdown(f"<small>{item.name}</small>", unsafe_allow_html=True)
+            with col_btn:
+                if item.code in existing_codes:
+                    st.button("✓", key=f"preset_{item.code}", disabled=True)
+                elif st.button("＋", key=f"preset_{item.code}"):
+                    config.watchlist.append(item)
+                    save_config(config)
+                    st.session_state["_pending_idx"] = len(config.watchlist) - 1
+                    st.rerun()
+
+
 def _render_watchlist(config: AppConfig) -> WatchlistItem | None:
     if not config.watchlist:
         st.caption("銘柄が登録されていません。")
         return None
 
     items = config.watchlist
-    labels = [f"{item.name} ({item.code})" for item in items]
     _init_selection(len(items))
+    selected_idx = st.session_state.get("radio_watchlist", 0)
 
-    selected_idx = st.radio(
-        "銘柄を選択",
-        range(len(items)),
-        format_func=lambda i: labels[i],
-        label_visibility="collapsed",
-        key="radio_watchlist",
-    )
-
-    if st.button("選択中の銘柄を削除", type="tertiary"):
-        config.watchlist.pop(selected_idx)
-        save_config(config)
-        new_count = len(config.watchlist)
-        if new_count > 0:
-            st.session_state["_pending_idx"] = min(selected_idx, new_count - 1)
-        st.rerun()
+    for i, item in enumerate(items):
+        col_btn, col_del = st.columns([5, 1])
+        with col_btn:
+            btn_type = "primary" if i == selected_idx else "secondary"
+            if st.button(
+                f"{item.name} ({item.code})",
+                key=f"wl_select_{i}",
+                type=btn_type,
+                use_container_width=True,
+            ):
+                st.session_state["_pending_idx"] = i
+                st.rerun()
+        with col_del:
+            if st.button("🗑", key=f"wl_del_{i}"):
+                config.watchlist.pop(i)
+                save_config(config)
+                new_count = len(config.watchlist)
+                if new_count > 0:
+                    st.session_state["_pending_idx"] = min(selected_idx, new_count - 1)
+                else:
+                    st.session_state.pop("radio_watchlist", None)
+                st.rerun()
 
     return items[selected_idx]
 
@@ -610,7 +639,7 @@ def _render_monthly_table(watchlist: list[WatchlistItem], config: AnalysisConfig
     combined.index = combined.index.astype(str)
     combined = combined.iloc[::-1]
 
-    def _color_cell(v: object) -> str:
+    def _color_cell(v: float) -> str:
         if pd.isna(v):
             return ""
         if v > 0:
@@ -619,7 +648,6 @@ def _render_monthly_table(watchlist: list[WatchlistItem], config: AnalysisConfig
             return "color: #dc2626"
         return ""
 
-    formatted = combined.map(lambda v: f"{v:+.2%}" if pd.notna(v) else "-")
     styled = combined.style.map(_color_cell).format(lambda v: f"{v:+.2%}" if pd.notna(v) else "-")
     st.dataframe(styled, use_container_width=True)
 
