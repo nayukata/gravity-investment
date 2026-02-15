@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import shutil
 import subprocess
 from datetime import date, timedelta
 
@@ -38,25 +39,44 @@ _playwright_checked = False
 
 
 def _ensure_playwright_browser() -> None:
-    """Playwright の Chromium がインストールされていなければインストールする。"""
+    """Playwright で使える Chromium を確保する。
+
+    1. システム Chromium（apt 等でインストール済み）があればそれを使う
+    2. なければ Playwright バンドル版を試す
+    3. それもなければ playwright install を実行する
+    """
     global _playwright_checked
     if _playwright_checked:
         return
+
+    # システム Chromium があれば OK（Streamlit Cloud では packages.txt 経由）
+    for name in ("chromium", "chromium-browser", "google-chrome"):
+        if shutil.which(name):
+            logger.info("System Chromium found: %s", name)
+            _playwright_checked = True
+            return
+
+    # Playwright バンドル版を試す
     try:
         from playwright.sync_api import sync_playwright
         with sync_playwright() as pw:
             pw.chromium.launch(headless=True).close()
+        _playwright_checked = True
+        return
     except Exception:
-        logger.info("Installing Playwright Chromium browser...")
-        try:
-            subprocess.run(
-                ["playwright", "install", "chromium"],
-                check=True,
-                capture_output=True,
-                timeout=300,
-            )
-        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired) as e:
-            logger.error("Failed to install Playwright Chromium: %s", e)
+        pass
+
+    # バンドル版がなければインストールを試みる
+    logger.info("Installing Playwright Chromium browser...")
+    try:
+        subprocess.run(
+            ["playwright", "install", "chromium"],
+            check=True,
+            capture_output=True,
+            timeout=300,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired) as e:
+        logger.error("Failed to install Playwright Chromium: %s", e)
     _playwright_checked = True
 
 _CATEGORY_LABELS = {

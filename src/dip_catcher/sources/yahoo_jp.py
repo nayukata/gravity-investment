@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
+import shutil
 from datetime import date
 from typing import TYPE_CHECKING
 
@@ -22,6 +23,18 @@ _BASE_URL = "https://finance.yahoo.co.jp/quote/{code}/history"
 _MAX_PAGES = 100
 _NAV_WAIT_MS = 2000
 
+# システムにインストールされた Chromium を検出する
+_SYSTEM_CHROMIUM_NAMES = ("chromium", "chromium-browser", "google-chrome")
+
+
+def _find_system_chromium() -> str | None:
+    """システムにインストールされた Chromium のパスを返す。"""
+    for name in _SYSTEM_CHROMIUM_NAMES:
+        path = shutil.which(name)
+        if path:
+            return path
+    return None
+
 
 class YahooJPSource:
     """日本の投資信託データのスクレイピング (Yahoo!ファイナンスJP)。"""
@@ -32,7 +45,12 @@ class YahooJPSource:
         all_rows: list[dict[str, object]] = []
 
         with sync_playwright() as pw:
-            browser = pw.chromium.launch(headless=True)
+            launch_kwargs: dict[str, object] = {"headless": True}
+            sys_chromium = _find_system_chromium()
+            if sys_chromium:
+                launch_kwargs["executable_path"] = sys_chromium
+                logger.info("Using system Chromium: %s", sys_chromium)
+            browser = pw.chromium.launch(**launch_kwargs)
             try:
                 page = browser.new_page()
 
