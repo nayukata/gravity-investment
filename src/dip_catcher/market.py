@@ -70,8 +70,8 @@ _CARD_CSS = """\
     margin-bottom: 4px;
 }
 .mkt-name {
-    font-size: 0.8rem;
-    color: #888;
+    font-size: 0.85rem;
+    font-weight: 600;
     margin: 0;
     white-space: nowrap;
     overflow: hidden;

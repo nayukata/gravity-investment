@@ -610,7 +610,17 @@ def _render_monthly_table(watchlist: list[WatchlistItem], config: AnalysisConfig
     combined.index = combined.index.astype(str)
     combined = combined.iloc[::-1]
 
-    styled = combined.map(lambda v: f"{v:+.2%}" if pd.notna(v) else "-")
+    def _color_cell(v: object) -> str:
+        if pd.isna(v):
+            return ""
+        if v > 0:
+            return "color: #16a34a"
+        if v < 0:
+            return "color: #dc2626"
+        return ""
+
+    formatted = combined.map(lambda v: f"{v:+.2%}" if pd.notna(v) else "-")
+    styled = combined.style.map(_color_cell).format(lambda v: f"{v:+.2%}" if pd.notna(v) else "-")
     st.dataframe(styled, use_container_width=True)
 
 
