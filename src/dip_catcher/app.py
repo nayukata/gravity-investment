@@ -14,6 +14,7 @@ from plotly.subplots import make_subplots
 from pydantic import ValidationError
 
 from dip_catcher.config import load_config, save_config
+from dip_catcher.market import render_market_overview
 from dip_catcher.logic import (
     AnalysisResult,
     analyze,
@@ -104,6 +105,15 @@ def main() -> None:
         "</style>",
         unsafe_allow_html=True,
     )
+    view = st.sidebar.radio(
+        "表示", ["分析", "市場概況"], horizontal=True, label_visibility="collapsed",
+        key="radio_view",
+    )
+
+    if view == "市場概況":
+        render_market_overview()
+        return
+
     st.markdown("#### 📉 Dip Catcher <small style='color:#888;font-weight:normal;'>統計的確率に基づく押し目買いシグナル</small>", unsafe_allow_html=True)
 
     config = load_config()
@@ -128,7 +138,7 @@ def main() -> None:
     _render_update_status(last_modified, is_fallback)
     _render_summary(selected, history, result)
     _render_main_chart(dates, closes, config.analysis)
-    _render_analysis_panel(dates, closes, result, config.analysis)
+    _render_analysis_panel(dates, closes, result, config.analysis, config.watchlist)
 
 
 # ---------------------------------------------------------------------------
@@ -446,12 +456,16 @@ def _render_main_chart(dates: pd.Series, closes: pd.Series, config: AnalysisConf
 
 
 def _render_analysis_panel(
-    dates: pd.Series, closes: pd.Series, result: AnalysisResult, config: AnalysisConfig,
+    dates: pd.Series,
+    closes: pd.Series,
+    result: AnalysisResult,
+    config: AnalysisConfig,
+    watchlist: list[WatchlistItem],
 ) -> None:
     st.subheader("分析パネル")
 
-    tab_scores, tab_histogram, tab_rsi, tab_events = st.tabs(
-        ["スコア内訳", "騰落率分布", "RSI", "過去ドローダウン"]
+    tab_scores, tab_histogram, tab_rsi, tab_events, tab_monthly = st.tabs(
+        ["スコア内訳", "騰落率分布", "RSI", "過去ドローダウン", "月次騰落率"]
     )
 
     with tab_scores:
@@ -465,6 +479,9 @@ def _render_analysis_panel(
 
     with tab_events:
         _render_dd_events(result)
+
+    with tab_monthly:
+        _render_monthly_table(watchlist, config)
 
 
 def _render_score_breakdown(result: AnalysisResult) -> None:
@@ -568,6 +585,33 @@ def _render_dd_events(result: AnalysisResult) -> None:
         })
 
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+
+def _render_monthly_table(watchlist: list[WatchlistItem], config: AnalysisConfig) -> None:
+    end = date.today()
+    start = end - timedelta(days=365 * config.period_years)
+
+    series: dict[str, pd.Series] = {}
+    for item in watchlist:
+        source = get_source(item.category)
+        cached = source.load_cache(item.code, start, end)
+        if cached is None:
+            continue
+        df = cached.df.copy()
+        df["month"] = df["date"].dt.to_period("M")
+        monthly_close = df.groupby("month")["close"].last()
+        series[item.name] = monthly_close.pct_change()
+
+    if not series:
+        st.info("キャッシュ済みのデータがありません。各銘柄を一度表示してください。")
+        return
+
+    combined = pd.DataFrame(series)
+    combined.index = combined.index.astype(str)
+    combined = combined.iloc[::-1]
+
+    styled = combined.map(lambda v: f"{v:+.2%}" if pd.notna(v) else "-")
+    st.dataframe(styled, use_container_width=True)
 
 
 if __name__ == "__main__":
