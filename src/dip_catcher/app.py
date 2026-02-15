@@ -97,8 +97,14 @@ _LABEL_COLORS = {
 def main() -> None:
     _ensure_playwright_browser()
     st.set_page_config(page_title="Dip Catcher", page_icon="📉", layout="wide")
-    st.title("📉 Dip Catcher")
-    st.caption("統計的確率に基づく押し目買いシグナル")
+    st.markdown(
+        "<style>"
+        "header[data-testid='stHeader'] {display: none;}"
+        ".block-container {padding-top: 1rem;}"
+        "</style>",
+        unsafe_allow_html=True,
+    )
+    st.markdown("#### 📉 Dip Catcher <small style='color:#888;font-weight:normal;'>統計的確率に基づく押し目買いシグナル</small>", unsafe_allow_html=True)
 
     config = load_config()
 
@@ -119,9 +125,7 @@ def main() -> None:
     closes = history.df["close"].reset_index(drop=True)
     dates = history.df["date"].reset_index(drop=True)
 
-    # 最終更新日時 + 更新ステータス
     _render_update_status(last_modified, is_fallback)
-
     _render_summary(selected, history, result)
     _render_main_chart(dates, closes, config.analysis)
     _render_analysis_panel(dates, closes, result, config.analysis)
@@ -310,7 +314,10 @@ def _render_update_status(last_modified: datetime | None, is_fallback: bool) -> 
     if is_fallback:
         st.warning(f"データソースに接続できませんでした。キャッシュを表示中です（最終更新: {ts}）")
     else:
-        st.caption(f"最終更新: {ts}")
+        st.markdown(
+            f"<div style='text-align:right;color:#888;font-size:0.8rem;'>最終更新: {ts}</div>",
+            unsafe_allow_html=True,
+        )
 
 
 # ---------------------------------------------------------------------------

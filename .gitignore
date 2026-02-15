@@ -208,3 +208,6 @@ __marimo__/
 
 # App data cache
 data/
+
+# claude
+settings.local.json
