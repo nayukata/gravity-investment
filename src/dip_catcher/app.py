@@ -311,49 +311,71 @@ def _render_main_chart(dates: pd.Series, closes: pd.Series, config: AnalysisConf
         rows=2, cols=1, shared_xaxes=True,
         vertical_spacing=0.03,
         row_heights=[0.7, 0.3],
-        subplot_titles=("", "ドローダウン"),
+        subplot_titles=("", "ドローダウン (%)"),
     )
 
     # 価格ライン
     fig.add_trace(
-        go.Scatter(x=dates, y=closes, name="価格", line=dict(color="#2563eb", width=1.5)),
+        go.Scatter(
+            x=dates, y=closes, name="価格",
+            line=dict(color="#2563eb", width=1.5),
+            hovertemplate="%{x|%Y年%m月%d日}<br>価格: %{y:,.0f}<extra></extra>",
+        ),
         row=1, col=1,
     )
 
     # 移動平均
     ma = closes.rolling(window=config.ma_days, min_periods=config.ma_days).mean()
     fig.add_trace(
-        go.Scatter(x=dates, y=ma, name=f"MA({config.ma_days})", line=dict(color="#f59e0b", width=1, dash="dash")),
+        go.Scatter(
+            x=dates, y=ma, name=f"移動平均 ({config.ma_days}日)",
+            line=dict(color="#f59e0b", width=1, dash="dash"),
+            hovertemplate="%{y:,.0f}<extra></extra>",
+        ),
         row=1, col=1,
     )
 
     # ボリンジャーバンド
     bb = calc_bollinger_bands(closes, config.bb_period, config.bb_std)
     fig.add_trace(
-        go.Scatter(x=dates, y=bb.upper, name=f"BB+{config.bb_std}σ", line=dict(color="#94a3b8", width=0.5), showlegend=False),
+        go.Scatter(
+            x=dates, y=bb.upper, name=f"ボリンジャー上限",
+            line=dict(color="#94a3b8", width=0.5), showlegend=False,
+            hoverinfo="skip",
+        ),
         row=1, col=1,
     )
     fig.add_trace(
-        go.Scatter(x=dates, y=bb.lower, name=f"BB-{config.bb_std}σ", line=dict(color="#94a3b8", width=0.5),
-                   fill="tonexty", fillcolor="rgba(148,163,184,0.1)", showlegend=False),
+        go.Scatter(
+            x=dates, y=bb.lower, name=f"ボリンジャー下限",
+            line=dict(color="#94a3b8", width=0.5),
+            fill="tonexty", fillcolor="rgba(148,163,184,0.1)", showlegend=False,
+            hoverinfo="skip",
+        ),
         row=1, col=1,
     )
 
     # ドローダウン（面グラフ）
     dd = calc_drawdown(closes) * 100
     fig.add_trace(
-        go.Scatter(x=dates, y=dd, name="ドローダウン", fill="tozeroy",
-                   line=dict(color="#dc2626", width=1), fillcolor="rgba(220,38,38,0.2)"),
+        go.Scatter(
+            x=dates, y=dd, name="ドローダウン", fill="tozeroy",
+            line=dict(color="#dc2626", width=1), fillcolor="rgba(220,38,38,0.2)",
+            hovertemplate="%{x|%Y年%m月%d日}<br>下落率: %{y:.1f}%<extra></extra>",
+        ),
         row=2, col=1,
     )
 
+    _dtick = dict(tickformat="%Y/%m", dtick="M3")
     fig.update_layout(
         height=500, margin=dict(l=0, r=0, t=30, b=0),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        hovermode="x unified",
+        hovermode="x",
     )
+    fig.update_xaxes(**_dtick, row=1, col=1)
+    fig.update_xaxes(**_dtick, row=2, col=1)
     fig.update_yaxes(title_text="価格", row=1, col=1)
-    fig.update_yaxes(title_text="%", row=2, col=1)
+    fig.update_yaxes(title_text="下落率 (%)", row=2, col=1)
 
     st.plotly_chart(fig, use_container_width=True)
 
@@ -388,11 +410,11 @@ def _render_analysis_panel(
 def _render_score_breakdown(result: AnalysisResult) -> None:
     scores = result.scores
     items = [
-        ("ドローダウン", scores.drawdown, 30, f"{result.current_drawdown*100:+.1f}%"),
-        ("統計的レアリティ", scores.rarity, 25, f"パーセンタイル {result.return_percentile:.1f}%"),
-        ("RSI", scores.rsi, 20, f"{result.current_rsi:.1f}"),
-        ("移動平均乖離率", scores.ma_deviation, 15, f"{result.current_ma_deviation*100:+.1f}%"),
-        ("ボリンジャーバンド", scores.bollinger, 10, f"%B = {result.current_bb_percent_b:.2f}"),
+        ("下落の深さ", scores.drawdown, 30, f"高値比 {result.current_drawdown*100:+.1f}%"),
+        ("統計的な珍しさ", scores.rarity, 25, f"下位 {result.return_percentile:.1f}%"),
+        ("売られすぎ度", scores.rsi, 20, f"RSI {result.current_rsi:.1f}"),
+        ("移動平均との乖離", scores.ma_deviation, 15, f"乖離 {result.current_ma_deviation*100:+.1f}%"),
+        ("バンドからの逸脱", scores.bollinger, 10, f"位置 {result.current_bb_percent_b:.2f}"),
     ]
 
     for name, score, weight, value in items:
@@ -418,23 +440,30 @@ def _render_return_histogram(closes: pd.Series, result: AnalysisResult) -> None:
 
     fig = go.Figure()
     fig.add_trace(
-        go.Histogram(x=returns, nbinsx=50, name="騰落率", marker_color="#2563eb", opacity=0.7)
+        go.Histogram(
+            x=returns, nbinsx=50, name="騰落率",
+            marker_color="#2563eb", opacity=0.7,
+            hovertemplate="騰落率: %{x:.2f}%<br>回数: %{y}<extra></extra>",
+        )
     )
 
     current_ret = returns.iloc[-1] if len(returns) > 0 else 0
     fig.add_vline(
         x=current_ret, line_dash="dash", line_color="#dc2626", line_width=2,
-        annotation_text=f"直近 {current_ret:.2f}%",
+        annotation_text=f"直近の騰落率 {current_ret:.2f}%",
         annotation_position="top right",
     )
 
     fig.update_layout(
-        xaxis_title="日次騰落率 (%)", yaxis_title="頻度",
+        xaxis_title="日次騰落率 (%)", yaxis_title="発生回数",
         height=350, margin=dict(l=0, r=0, t=30, b=0),
         showlegend=False,
     )
     st.plotly_chart(fig, use_container_width=True)
-    st.caption(f"現在の下落は過去分布の **{result.return_percentile:.1f}パーセンタイル** に位置しています。")
+    st.caption(
+        f"直近の騰落率は過去の分布の中で **下位 {result.return_percentile:.1f}%** の位置にあります。"
+        f"値が小さいほど、統計的に珍しい下落です。"
+    )
 
 
 def _render_rsi_chart(dates: pd.Series, closes: pd.Series, config: AnalysisConfig) -> None:
@@ -442,18 +471,24 @@ def _render_rsi_chart(dates: pd.Series, closes: pd.Series, config: AnalysisConfi
 
     fig = go.Figure()
     fig.add_trace(
-        go.Scatter(x=dates, y=rsi, name=f"RSI({config.rsi_period})", line=dict(color="#7c3aed", width=1.5))
+        go.Scatter(
+            x=dates, y=rsi, name=f"RSI（{config.rsi_period}日）",
+            line=dict(color="#7c3aed", width=1.5),
+            hovertemplate="%{x|%Y年%m月%d日}<br>RSI: %{y:.1f}<extra></extra>",
+        )
     )
-    fig.add_hline(y=70, line_dash="dot", line_color="#dc2626", annotation_text="買われすぎ (70)")
-    fig.add_hline(y=30, line_dash="dot", line_color="#16a34a", annotation_text="売られすぎ (30)")
+    fig.add_hline(y=70, line_dash="dot", line_color="#dc2626", annotation_text="買われすぎ（70）")
+    fig.add_hline(y=30, line_dash="dot", line_color="#16a34a", annotation_text="売られすぎ（30）")
     fig.add_hrect(y0=30, y1=70, fillcolor="rgba(0,0,0,0.03)", line_width=0)
 
     fig.update_layout(
-        yaxis=dict(range=[0, 100], title="RSI"),
+        yaxis=dict(range=[0, 100], title="相対力指数（RSI）"),
         height=300, margin=dict(l=0, r=0, t=10, b=0),
         showlegend=False,
     )
+    fig.update_xaxes(tickformat="%Y/%m", dtick="M3")
     st.plotly_chart(fig, use_container_width=True)
+    st.caption("RSI（相対力指数）は、直近の値動きが上昇・下落どちらに傾いているかを示します。30以下は「売られすぎ」で反発の可能性を示唆します。")
 
 
 def _render_dd_events(result: AnalysisResult) -> None:
