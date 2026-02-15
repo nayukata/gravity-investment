@@ -12,8 +12,10 @@ class StooqSource:
     """日本株・一部指数のデータ取得 (stooq.com CSV)。"""
 
     def fetch(self, code: str, start: date, end: date) -> pd.DataFrame:
+        # 数字のみのコード（日本株の証券コード）には .JP を自動付与
+        stooq_code = f"{code}.JP" if code.isdigit() else code
         params = {
-            "s": code,
+            "s": stooq_code,
             "d1": start.strftime("%Y%m%d"),
             "d2": end.strftime("%Y%m%d"),
             "i": "d",
