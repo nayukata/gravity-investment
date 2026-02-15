@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import shutil
 import subprocess
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -112,13 +112,16 @@ def main() -> None:
     if selected is None:
         return
 
-    history = _fetch_data(selected, config.analysis)
+    history, last_modified, is_fallback = _load_and_display(selected, config.analysis)
     if history is None:
         return
 
     result = analyze(history, config.analysis)
     closes = history.df["close"].reset_index(drop=True)
     dates = history.df["date"].reset_index(drop=True)
+
+    # 最終更新日時 + 更新ステータス
+    _render_update_status(last_modified, is_fallback)
 
     _render_summary(selected, history, result)
     _render_main_chart(dates, closes, config.analysis)
@@ -226,39 +229,69 @@ def _select_watchlist_item(config: AppConfig) -> WatchlistItem | None:
     return items[idx] if idx is not None else None
 
 
-@st.cache_data(ttl=300, show_spinner="データ取得中...")
-def _fetch_data_cached(
-    code: str, category: str, period_years: int,
-) -> tuple[pd.DataFrame, bool] | None:
-    """データを取得し (DataFrame, is_fallback) を返す。完全失敗時は None。"""
+def _load_and_display(
+    item: WatchlistItem, analysis: AnalysisConfig,
+) -> tuple[PriceHistory | None, datetime | None, bool]:
+    """キャッシュ優先でデータを取得する。
+
+    1. ディスクキャッシュがあれば即座に返す（ネットワーク不要）
+    2. キャッシュが古ければバックグラウンドで更新する
+    3. キャッシュがなければ同期的に取得する
+
+    Returns:
+        (PriceHistory | None, last_modified | None, is_fallback)
+    """
+    source = get_source(item.category)
+    end = date.today()
+    start = end - timedelta(days=365 * analysis.period_years)
+
+    # Step 1: ディスクキャッシュを即座に読み込む
+    cached = source.load_cache(item.code, start, end)
+
+    if cached is not None:
+        # Step 2: 更新が必要かチェック → 必要ならバックグラウンドで更新
+        if source.needs_refresh(item.code):
+            _background_refresh(item.code, item.category.value, start, end)
+        return PriceHistory(cached.df), cached.last_modified, cached.is_fallback
+
+    # Step 3: キャッシュなし → 初回は同期取得（避けられない）
+    with st.spinner("初回データ取得中…"):
+        try:
+            result = source.fetch(item.code, start, end)
+            return PriceHistory(result.df), result.last_modified, result.is_fallback
+        except (ValueError, ConnectionError, OSError, TimeoutError) as e:
+            logger.warning("Failed to fetch %s: %s", item.code, e)
+            st.error(f"{item.name} のデータを取得できませんでした。")
+            return None, None, False
+
+
+@st.cache_data(ttl=21600, show_spinner=False)
+def _background_refresh(
+    code: str, category: str, start: date, end: date,
+) -> bool:
+    """キャッシュをバックグラウンドで更新する。
+
+    st.cache_data (TTL=6時間) で同一引数の再実行を抑止する。
+    """
     cat = AssetCategory(category)
     source = get_source(cat)
-    end = date.today()
-    start = end - timedelta(days=365 * period_years)
     try:
-        result = source.fetch(code, start, end)
-        return result.df, result.is_fallback
+        source.fetch(code, start, end)
+        return True
     except (ValueError, ConnectionError, OSError, TimeoutError) as e:
-        logger.warning("Failed to fetch %s: %s", code, e)
-        return None
+        logger.warning("Background refresh failed for %s: %s", code, e)
+        return False
 
 
-def _fetch_data(item: WatchlistItem, analysis: AnalysisConfig) -> PriceHistory | None:
-    cached = _fetch_data_cached(item.code, item.category.value, analysis.period_years)
-    if cached is None:
-        st.error(f"{item.name} のデータを取得できませんでした。")
-        return None
-    df, is_fallback = cached
-    if df.empty:
-        st.error(f"{item.name} のデータを取得できませんでした。")
-        return None
+def _render_update_status(last_modified: datetime | None, is_fallback: bool) -> None:
+    """最終更新日時と更新ステータスを表示する。"""
+    if last_modified is None:
+        return
+    ts = last_modified.strftime("%Y-%m-%d %H:%M")
     if is_fallback:
-        last_date = df["date"].max()
-        st.warning(
-            f"データソースに接続できなかったため、キャッシュデータを表示しています"
-            f"（最終更新: {last_date:%Y-%m-%d}）"
-        )
-    return PriceHistory(df)
+        st.warning(f"データソースに接続できませんでした。キャッシュを表示中です（最終更新: {ts}）")
+    else:
+        st.caption(f"最終更新: {ts}")
 
 
 # ---------------------------------------------------------------------------

@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -14,6 +14,9 @@ logger = logging.getLogger(__name__)
 
 _DATA_DIR = Path.home() / ".dip_catcher" / "data"
 
+# キャッシュの最小更新間隔（これより新しいキャッシュは再取得しない）
+MIN_REFRESH_INTERVAL = timedelta(hours=6)
+
 
 @dataclass
 class FetchResult:
@@ -21,6 +24,7 @@ class FetchResult:
 
     df: pd.DataFrame = field(repr=False)
     is_fallback: bool = False
+    last_modified: datetime | None = None
 
     @property
     def last_date(self) -> date | None:
@@ -47,6 +51,26 @@ class CachedSource:
             safe_code = "_invalid_"
         return self._data_dir / f"{safe_code}.csv"
 
+    def load_cache(self, code: str, start: date, end: date) -> FetchResult | None:
+        """ディスクキャッシュからデータを読み込む（ネットワーク不要）。"""
+        cache_path = self._cache_path(code)
+        cached_df = self._load_cache(cache_path)
+        if cached_df is None:
+            return None
+        last_modified = datetime.fromtimestamp(cache_path.stat().st_mtime)
+        filtered = self._filter(cached_df, start, end)
+        if filtered.empty:
+            return None
+        return FetchResult(df=filtered, last_modified=last_modified)
+
+    def needs_refresh(self, code: str) -> bool:
+        """キャッシュが古く、更新が必要かどうかを判定する。"""
+        cache_path = self._cache_path(code)
+        if not cache_path.exists():
+            return True
+        age = datetime.now() - datetime.fromtimestamp(cache_path.stat().st_mtime)
+        return age > MIN_REFRESH_INTERVAL
+
     def fetch(self, code: str, start: date, end: date) -> FetchResult:
         cache_path = self._cache_path(code)
         cached_df = self._load_cache(cache_path)
@@ -55,7 +79,11 @@ class CachedSource:
             fetch_start = self._next_fetch_start(cached_df, start)
             if fetch_start > end:
                 logger.info("Cache is up-to-date for %s", code)
-                return FetchResult(self._filter(cached_df, start, end))
+                last_modified = datetime.fromtimestamp(cache_path.stat().st_mtime)
+                return FetchResult(
+                    self._filter(cached_df, start, end),
+                    last_modified=last_modified,
+                )
         else:
             fetch_start = start
 
@@ -68,14 +96,20 @@ class CachedSource:
                     code,
                     cached_df["date"].max(),
                 )
+                last_modified = datetime.fromtimestamp(cache_path.stat().st_mtime)
                 return FetchResult(
-                    self._filter(cached_df, start, end), is_fallback=True,
+                    self._filter(cached_df, start, end),
+                    is_fallback=True,
+                    last_modified=last_modified,
                 )
             raise
 
         merged = self._merge(cached_df, new_df)
         self._save_cache(cache_path, merged)
-        return FetchResult(self._filter(merged, start, end))
+        last_modified = datetime.fromtimestamp(cache_path.stat().st_mtime)
+        return FetchResult(
+            self._filter(merged, start, end), last_modified=last_modified,
+        )
 
     def _load_cache(self, path: Path) -> pd.DataFrame | None:
         if not path.exists():
