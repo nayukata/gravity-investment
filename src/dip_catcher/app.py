@@ -265,13 +265,13 @@ def _load_and_display(
             return None, None, False
 
 
-@st.cache_data(ttl=21600, show_spinner=False)
+@st.cache_data(ttl=10800, show_spinner=False)
 def _background_refresh(
     code: str, category: str, start: date, end: date,
 ) -> bool:
     """キャッシュをバックグラウンドで更新する。
 
-    st.cache_data (TTL=6時間) で同一引数の再実行を抑止する。
+    st.cache_data (TTL=3時間) で同一引数の再実行を抑止する。
     """
     cat = AssetCategory(category)
     source = get_source(cat)
