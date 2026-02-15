@@ -102,13 +102,12 @@ def main() -> None:
 
     config = load_config()
 
-    config = _render_sidebar(config)
+    config, selected = _render_sidebar(config)
 
     if not config.watchlist:
         st.info("サイドバーから銘柄を登録してください。")
         return
 
-    selected = _select_watchlist_item(config)
     if selected is None:
         return
 
@@ -133,18 +132,30 @@ def main() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _render_sidebar(config: AppConfig) -> AppConfig:
-    """サイドバーを描画し、更新された設定を返す。"""
+def _init_selection(count: int) -> None:
+    """session_state の選択インデックスを初期化・正規化する。"""
+    if count == 0:
+        st.session_state.pop("radio_watchlist", None)
+        return
+    idx = st.session_state.get("radio_watchlist", 0)
+    if not isinstance(idx, int) or idx < 0 or idx >= count:
+        st.session_state["radio_watchlist"] = 0
+
+
+def _render_sidebar(config: AppConfig) -> tuple[AppConfig, WatchlistItem | None]:
+    """サイドバーを描画し、更新された設定と選択中の銘柄を返す。"""
     with st.sidebar:
         st.header("監視リスト")
-        _render_add_form(config)
-        _render_watchlist(config)
+        selected = _render_watchlist(config)
+
+        with st.expander("銘柄を追加"):
+            _render_add_form(config)
 
         st.divider()
         st.header("分析設定")
         config = _render_analysis_settings(config)
 
-    return config
+    return config, selected
 
 
 def _render_add_form(config: AppConfig) -> None:
@@ -165,31 +176,46 @@ def _render_add_form(config: AppConfig) -> None:
         try:
             item = WatchlistItem(code=code.strip(), name=name.strip(), category=category)
         except ValidationError:
-            st.sidebar.error("銘柄コードまたは表示名が不正です（英数字・記号のみ、30文字以内）。")
+            st.error("銘柄コードまたは表示名が不正です（英数字・記号のみ、30文字以内）。")
             return
         existing_codes = {w.code for w in config.watchlist}
         if item.code in existing_codes:
-            st.sidebar.warning(f"{item.code} は既に登録されています。")
+            st.warning(f"{item.code} は既に登録されています。")
         else:
             config.watchlist.append(item)
             save_config(config)
+            st.session_state["radio_watchlist"] = len(config.watchlist) - 1
             st.rerun()
 
 
-def _render_watchlist(config: AppConfig) -> None:
+def _render_watchlist(config: AppConfig) -> WatchlistItem | None:
     if not config.watchlist:
         st.caption("銘柄が登録されていません。")
-        return
+        return None
 
-    for i, item in enumerate(config.watchlist):
-        col1, col2 = st.columns([4, 1])
-        with col1:
-            st.text(f"{item.name} ({item.code})")
-        with col2:
-            if st.button("✕", key=f"del_{i}"):
-                config.watchlist.pop(i)
-                save_config(config)
-                st.rerun()
+    items = config.watchlist
+    labels = [f"{item.name} ({item.code})" for item in items]
+    _init_selection(len(items))
+
+    selected_idx = st.radio(
+        "銘柄を選択",
+        range(len(items)),
+        format_func=lambda i: labels[i],
+        label_visibility="collapsed",
+        key="radio_watchlist",
+    )
+
+    if st.button("選択中の銘柄を削除", type="tertiary"):
+        config.watchlist.pop(selected_idx)
+        save_config(config)
+        new_count = len(config.watchlist)
+        if new_count == 0:
+            st.session_state.pop("radio_watchlist", None)
+        else:
+            st.session_state["radio_watchlist"] = min(selected_idx, new_count - 1)
+        st.rerun()
+
+    return items[selected_idx]
 
 
 def _render_analysis_settings(config: AppConfig) -> AppConfig:
@@ -220,13 +246,6 @@ def _render_analysis_settings(config: AppConfig) -> AppConfig:
 # ---------------------------------------------------------------------------
 # 銘柄選択・データ取得
 # ---------------------------------------------------------------------------
-
-
-def _select_watchlist_item(config: AppConfig) -> WatchlistItem | None:
-    items = config.watchlist
-    labels = [f"{item.name} ({item.code})" for item in items]
-    idx = st.selectbox("銘柄を選択", range(len(items)), format_func=lambda i: labels[i])
-    return items[idx] if idx is not None else None
 
 
 def _load_and_display(
