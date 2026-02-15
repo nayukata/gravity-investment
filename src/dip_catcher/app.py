@@ -110,13 +110,13 @@ def main() -> None:
         key="radio_view",
     )
 
+    config = load_config()
+
     if view == "市場概況":
-        render_market_overview()
+        render_market_overview(config)
         return
 
     st.markdown("#### 📉 Dip Catcher <small style='color:#888;font-weight:normal;'>統計的確率に基づく押し目買いシグナル</small>", unsafe_allow_html=True)
-
-    config = load_config()
 
     config, selected = _render_sidebar(config)
 
