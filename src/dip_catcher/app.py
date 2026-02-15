@@ -140,7 +140,10 @@ def _init_selection(count: int) -> None:
     """session_state の選択インデックスを初期化・正規化する。"""
     if count == 0:
         st.session_state.pop("radio_watchlist", None)
+        st.session_state.pop("_pending_idx", None)
         return
+    if "_pending_idx" in st.session_state:
+        st.session_state["radio_watchlist"] = st.session_state.pop("_pending_idx")
     idx = st.session_state.get("radio_watchlist", 0)
     if not isinstance(idx, int) or idx < 0 or idx >= count:
         st.session_state["radio_watchlist"] = 0
@@ -188,7 +191,7 @@ def _render_add_form(config: AppConfig) -> None:
         else:
             config.watchlist.append(item)
             save_config(config)
-            st.session_state["radio_watchlist"] = len(config.watchlist) - 1
+            st.session_state["_pending_idx"] = len(config.watchlist) - 1
             st.rerun()
 
 
@@ -213,10 +216,8 @@ def _render_watchlist(config: AppConfig) -> WatchlistItem | None:
         config.watchlist.pop(selected_idx)
         save_config(config)
         new_count = len(config.watchlist)
-        if new_count == 0:
-            st.session_state.pop("radio_watchlist", None)
-        else:
-            st.session_state["radio_watchlist"] = min(selected_idx, new_count - 1)
+        if new_count > 0:
+            st.session_state["_pending_idx"] = min(selected_idx, new_count - 1)
         st.rerun()
 
     return items[selected_idx]
