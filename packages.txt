@@ -1,2 +1,1 @@
-# Chromium browser for Playwright (Streamlit Cloud)
 chromium
