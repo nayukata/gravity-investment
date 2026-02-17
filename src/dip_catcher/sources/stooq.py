@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import io
 from datetime import date
 from urllib.parse import urlencode
+from urllib.request import urlopen
 
 import pandas as pd
 
 _BASE_URL = "https://stooq.com/q/d/l/"
+_TIMEOUT = 15
 
 
 class StooqSource:
@@ -22,7 +25,8 @@ class StooqSource:
         }
         url = f"{_BASE_URL}?{urlencode(params)}"
         try:
-            df = pd.read_csv(url)
+            with urlopen(url, timeout=_TIMEOUT) as resp:
+                df = pd.read_csv(io.StringIO(resp.read().decode("utf-8")))
         except Exception as e:
             raise ValueError(f"Failed to fetch stooq data for {code}: {e}") from e
         if df.empty or "Close" not in df.columns:
