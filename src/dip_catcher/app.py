@@ -381,6 +381,11 @@ def _render_summary(item: WatchlistItem, history: PriceHistory, result: Analysis
     label_color = _LABEL_COLORS.get(result.label, "#6b7280")
     sym = _currency_symbol(item.category)
 
+    closes = history.df["close"]
+    recent_window = min(252, len(closes))
+    recent_high = float(closes.iloc[-recent_window:].max())
+    recent_dd = (history.latest_close - recent_high) / recent_high if recent_high > 0 else 0.0
+
     col1, col2, col3, col4, col5, col6 = st.columns(6)
     with col1:
         st.metric("基準価額", f"{sym}{history.latest_close:,.0f}")
@@ -388,11 +393,11 @@ def _render_summary(item: WatchlistItem, history: PriceHistory, result: Analysis
         daily_ret_pct = result.current_daily_return * 100
         st.metric("前日比", f"{daily_ret_pct:+.2f}%")
     with col3:
-        dd_pct = result.current_drawdown * 100
-        st.metric("高値からの下落率", f"{dd_pct:+.1f}%")
+        recent_dd_pct = recent_dd * 100
+        st.metric("52週高値からの下落率", f"{recent_dd_pct:+.1f}%")
     with col4:
-        ath_dd_pct = result.ath_drawdown * 100
-        st.metric("最高値からの下落率", f"{ath_dd_pct:+.1f}%")
+        dd_pct = result.current_drawdown * 100
+        st.metric("最高値からの下落率", f"{dd_pct:+.1f}%")
     with col5:
         st.metric("総合スコア", f"{result.total_score:.0f} / 100")
     with col6:
