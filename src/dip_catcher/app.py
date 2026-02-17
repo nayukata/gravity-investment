@@ -507,7 +507,7 @@ def _render_analysis_panel(
     st.subheader("分析パネル")
 
     tab_scores, tab_histogram, tab_rsi, tab_events, tab_monthly = st.tabs(
-        ["スコア内訳", "騰落率分布", "RSI", "過去ドローダウン", "月次騰落率"]
+        ["スコア内訳", "騰落スコア", "RSI", "過去ドローダウン", "月次騰落率"]
     )
 
     with tab_scores:
@@ -530,7 +530,7 @@ def _render_score_breakdown(result: AnalysisResult) -> None:
     scores = result.scores
     items = [
         ("下落の深さ", scores.drawdown, 30, f"高値比 {result.current_drawdown*100:+.1f}%"),
-        ("統計的な珍しさ", scores.rarity, 25, f"{result.rarity_window}日間 下位 {result.return_percentile:.1f}%"),
+        ("騰落スコア", scores.rarity, 25, f"{result.rarity_window}日間 下位 {result.return_percentile:.1f}%{'（安定化）' if result.rarity_window > 1 else ''}"),
         ("売られすぎ度", scores.rsi, 20, f"RSI {result.current_rsi:.1f}"),
         ("移動平均との乖離", scores.ma_deviation, 15, f"乖離 {result.current_ma_deviation*100:+.1f}%"),
         ("バンドからの逸脱", scores.bollinger, 10, f"位置 {result.current_bb_percent_b:.2f}"),

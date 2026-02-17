@@ -185,9 +185,14 @@ class TestScoring:
     def test_score_rarity(self) -> None:
         from dip_catcher.logic import _score_rarity
 
-        assert _score_rarity(50.0) == 0.0
-        assert _score_rarity(0.0) == pytest.approx(100.0)
-        assert _score_rarity(25.0) == pytest.approx(50.0)
+        # window=1: パニック渦中 (×0.85)
+        assert _score_rarity(50.0, window=1) == 0.0
+        assert _score_rarity(0.0, window=1) == pytest.approx(85.0)
+        assert _score_rarity(25.0, window=1) == pytest.approx(42.5)
+        # window=3: 安定化パターン (×1.15)
+        assert _score_rarity(50.0, window=3) == 0.0
+        assert _score_rarity(0.0, window=3) == pytest.approx(100.0)  # capped
+        assert _score_rarity(25.0, window=3) == pytest.approx(57.5)
 
     def test_score_rsi(self) -> None:
         from dip_catcher.logic import _score_rsi

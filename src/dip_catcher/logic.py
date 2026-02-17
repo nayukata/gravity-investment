@@ -251,15 +251,22 @@ def _score_drawdown(dd: float) -> float:
     return float(np.clip(depth / _DD_MAX * 100, 0, 100))
 
 
-def _score_rarity(percentile: float) -> float:
-    """統計的レアリティをスコア化する。
+_STABILIZATION_BONUS = 1.15  # 安定化パターン（window > 1）: スコア +15%
+_PANIC_PENALTY = 0.85  # パニック渦中（window == 1）: スコア -15%
+
+
+def _score_rarity(percentile: float, window: int) -> float:
+    """騰落スコアを計算する。
 
     パーセンタイルが低いほど高スコア。
     50%以上 → 0点, 25% → 50点, 0% → 100点（線形補間）
+    安定化パターン（window > 1）はボーナス、パニック渦中は減点。
     """
     if percentile >= _RARITY_UPPER:
         return 0.0
-    return float(np.clip((_RARITY_UPPER - percentile) / _RARITY_UPPER * 100, 0, 100))
+    base = (_RARITY_UPPER - percentile) / _RARITY_UPPER * 100
+    modifier = _STABILIZATION_BONUS if window > 1 else _PANIC_PENALTY
+    return float(np.clip(base * modifier, 0, 100))
 
 
 def _score_rsi(rsi: float) -> float:
@@ -352,7 +359,7 @@ def analyze(history: PriceHistory, config: AnalysisConfig) -> AnalysisResult:
     # スコアリング
     scores = IndicatorScores(
         drawdown=_score_drawdown(current_dd),
-        rarity=_score_rarity(percentile),
+        rarity=_score_rarity(percentile, rarity_win),
         rsi=_score_rsi(current_rsi),
         ma_deviation=_score_ma_deviation(current_ma_dev),
         bollinger=_score_bollinger(current_bb),
