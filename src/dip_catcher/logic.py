@@ -29,6 +29,11 @@ def calc_daily_returns(closes: pd.Series) -> pd.Series:
     return closes.pct_change().dropna()
 
 
+def calc_cumulative_returns(closes: pd.Series, window: int) -> pd.Series:
+    """N日間の累積騰落率を計算する。"""
+    return closes.pct_change(periods=window).dropna()
+
+
 def calc_return_percentile(returns: pd.Series, current_return: float) -> float:
     """現在の騰落率が過去分布の何パーセンタイルに位置するかを返す。
 
@@ -40,6 +45,31 @@ def calc_return_percentile(returns: pd.Series, current_return: float) -> float:
         return 50.0
     count_below = np.sum(values <= current_return)
     return float(count_below / len(values) * 100)
+
+
+_RARITY_WINDOWS = (1, 3, 5)
+
+
+def calc_best_rarity(closes: pd.Series) -> tuple[float, float, int]:
+    """1日/3日/5日の累積リターンで最もレアなパーセンタイルを返す。
+
+    Returns:
+        (最小パーセンタイル, 該当リターン, ウィンドウ日数)
+    """
+    best_pct = 50.0
+    best_ret = 0.0
+    best_window = 1
+    for w in _RARITY_WINDOWS:
+        rets = calc_cumulative_returns(closes, w) if w > 1 else calc_daily_returns(closes)
+        if len(rets) == 0:
+            continue
+        current = float(rets.iloc[-1])
+        pct = calc_return_percentile(rets, current)
+        if pct < best_pct:
+            best_pct = pct
+            best_ret = current
+            best_window = w
+    return best_pct, best_ret, best_window
 
 
 def calc_ma_deviation(closes: pd.Series, window: int) -> pd.Series:
@@ -206,7 +236,9 @@ class AnalysisResult:
     current_rsi: float
     current_ma_deviation: float
     current_bb_percent_b: float
-    return_percentile: float  # 現在騰落率のパーセンタイル
+    return_percentile: float  # 最もレアなパーセンタイル
+    rarity_return: float  # 採用されたリターン値
+    rarity_window: int  # 採用されたウィンドウ日数
     drawdown_events: list[DrawdownEvent]
 
 
@@ -304,7 +336,7 @@ def analyze(history: PriceHistory, config: AnalysisConfig) -> AnalysisResult:
 
     daily_ret = calc_daily_returns(closes)
     current_ret = float(daily_ret.iloc[-1]) if len(daily_ret) > 0 else 0.0
-    percentile = calc_return_percentile(daily_ret, current_ret) if len(daily_ret) > 0 else 50.0
+    percentile, rarity_ret, rarity_win = calc_best_rarity(closes)
 
     ma_dev_series = calc_ma_deviation(closes, config.ma_days)
     current_ma_dev = float(ma_dev_series.iloc[-1]) if not np.isnan(ma_dev_series.iloc[-1]) else 0.0
@@ -337,5 +369,7 @@ def analyze(history: PriceHistory, config: AnalysisConfig) -> AnalysisResult:
         current_ma_deviation=current_ma_dev,
         current_bb_percent_b=current_bb,
         return_percentile=percentile,
+        rarity_return=rarity_ret,
+        rarity_window=rarity_win,
         drawdown_events=dd_events,
     )

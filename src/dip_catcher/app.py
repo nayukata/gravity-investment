@@ -19,6 +19,7 @@ from dip_catcher.logic import (
     AnalysisResult,
     analyze,
     calc_bollinger_bands,
+    calc_cumulative_returns,
     calc_daily_returns,
     calc_drawdown,
     calc_ma_deviation,
@@ -529,7 +530,7 @@ def _render_score_breakdown(result: AnalysisResult) -> None:
     scores = result.scores
     items = [
         ("下落の深さ", scores.drawdown, 30, f"高値比 {result.current_drawdown*100:+.1f}%"),
-        ("統計的な珍しさ", scores.rarity, 25, f"下位 {result.return_percentile:.1f}%"),
+        ("統計的な珍しさ", scores.rarity, 25, f"{result.rarity_window}日間 下位 {result.return_percentile:.1f}%"),
         ("売られすぎ度", scores.rsi, 20, f"RSI {result.current_rsi:.1f}"),
         ("移動平均との乖離", scores.ma_deviation, 15, f"乖離 {result.current_ma_deviation*100:+.1f}%"),
         ("バンドからの逸脱", scores.bollinger, 10, f"位置 {result.current_bb_percent_b:.2f}"),
@@ -554,7 +555,12 @@ def _render_score_breakdown(result: AnalysisResult) -> None:
 
 
 def _render_return_histogram(closes: pd.Series, result: AnalysisResult) -> None:
-    returns = calc_daily_returns(closes) * 100
+    w = result.rarity_window
+    if w > 1:
+        returns = calc_cumulative_returns(closes, w) * 100
+    else:
+        returns = calc_daily_returns(closes) * 100
+    window_label = f"{w}日間" if w > 1 else "日次"
 
     fig = go.Figure()
     fig.add_trace(
@@ -565,22 +571,22 @@ def _render_return_histogram(closes: pd.Series, result: AnalysisResult) -> None:
         )
     )
 
-    current_ret = returns.iloc[-1] if len(returns) > 0 else 0
+    current_ret = result.rarity_return * 100
     fig.add_vline(
         x=current_ret, line_dash="dash", line_color="#dc2626", line_width=2,
-        annotation_text=f"直近の騰落率 {current_ret:.2f}%",
+        annotation_text=f"直近{window_label}騰落率 {current_ret:.2f}%",
         annotation_position="top right",
     )
 
     fig.update_layout(
-        xaxis_title="日次騰落率 (%)", yaxis_title="発生回数",
+        xaxis_title=f"{window_label}騰落率 (%)", yaxis_title="発生回数",
         height=350, margin=dict(l=0, r=0, t=30, b=0),
         showlegend=False,
     )
     st.plotly_chart(fig, use_container_width=True)
     st.caption(
-        f"直近の騰落率は過去の分布の中で **下位 {result.return_percentile:.1f}%** の位置にあります。"
-        f"値が小さいほど、統計的に珍しい下落です。"
+        f"直近{window_label}の騰落率は過去の分布の中で **下位 {result.return_percentile:.1f}%** の位置にあります。"
+        f"1日/3日/5日の中で最もレアなウィンドウを自動選択しています。"
     )
 
 
