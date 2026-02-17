@@ -39,9 +39,9 @@ PRESET_ITEMS: dict[AssetCategory, list[WatchlistItem]] = {
         WatchlistItem(code="NVDA", name="NVIDIA", category=AssetCategory.US_STOCK),
     ],
     AssetCategory.JP_STOCK: [
-        WatchlistItem(code="1306", name="TOPIX連動型ETF", category=AssetCategory.JP_STOCK),
-        WatchlistItem(code="1321", name="日経225連動型ETF", category=AssetCategory.JP_STOCK),
-        WatchlistItem(code="1655", name="iシェアーズ S&P500 ETF", category=AssetCategory.JP_STOCK),
+        WatchlistItem(code="1306.T", name="TOPIX連動型ETF", category=AssetCategory.JP_STOCK),
+        WatchlistItem(code="1321.T", name="日経225連動型ETF", category=AssetCategory.JP_STOCK),
+        WatchlistItem(code="1655.T", name="iシェアーズ S&P500 ETF", category=AssetCategory.JP_STOCK),
     ],
     AssetCategory.INDEX: [
         WatchlistItem(code="^GSPC", name="S&P 500", category=AssetCategory.INDEX),

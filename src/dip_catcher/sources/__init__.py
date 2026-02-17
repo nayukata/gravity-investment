@@ -4,14 +4,13 @@ from functools import lru_cache
 
 from dip_catcher.models import AssetCategory
 from dip_catcher.sources.cache import CachedSource
-from dip_catcher.sources.stooq import StooqSource
 from dip_catcher.sources.yahoo_jp import YahooJPSource
 from dip_catcher.sources.yfinance_source import YFinanceSource
 
 _CATEGORY_SOURCE_MAP = {
     AssetCategory.US_STOCK: YFinanceSource,
     AssetCategory.INDEX: YFinanceSource,
-    AssetCategory.JP_STOCK: StooqSource,
+    AssetCategory.JP_STOCK: YFinanceSource,
     AssetCategory.JP_FUND: YahooJPSource,
 }
 
