@@ -201,7 +201,8 @@ class AnalysisResult:
     scores: IndicatorScores
     total_score: float  # 0〜100
     label: str  # 判定ラベル
-    current_drawdown: float  # 現在のドローダウン値
+    current_drawdown: float  # 現在のドローダウン値（直近高値から）
+    ath_drawdown: float  # 最高値からのドローダウン値
     current_daily_return: float  # 直近日次リターン（前日比）
     current_rsi: float
     current_ma_deviation: float
@@ -302,6 +303,10 @@ def analyze(history: PriceHistory, config: AnalysisConfig) -> AnalysisResult:
     dd_series = calc_drawdown(closes)
     current_dd = float(dd_series.iloc[-1]) if not np.isnan(dd_series.iloc[-1]) else 0.0
 
+    ath = float(closes.max())
+    latest = float(closes.iloc[-1])
+    ath_dd = (latest - ath) / ath if ath > 0 else 0.0
+
     daily_ret = calc_daily_returns(closes)
     current_ret = float(daily_ret.iloc[-1]) if len(daily_ret) > 0 else 0.0
     percentile = calc_return_percentile(daily_ret, current_ret) if len(daily_ret) > 0 else 50.0
@@ -332,6 +337,7 @@ def analyze(history: PriceHistory, config: AnalysisConfig) -> AnalysisResult:
         total_score=total,
         label=_label_from_score(total),
         current_drawdown=current_dd,
+        ath_drawdown=ath_dd,
         current_daily_return=current_ret,
         current_rsi=current_rsi,
         current_ma_deviation=current_ma_dev,

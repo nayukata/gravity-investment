@@ -165,7 +165,8 @@ def _render_sidebar(config: AppConfig) -> tuple[AppConfig, WatchlistItem | None]
         st.header("監視リスト")
         selected = _render_watchlist(config)
 
-        with st.expander("銘柄を追加", expanded=not config.watchlist):
+        expand_add = not config.watchlist or st.session_state.get("_expand_add", False)
+        with st.expander("銘柄を追加", expanded=expand_add):
             tab_preset, tab_custom = st.tabs(["プリセット", "カスタム"])
             with tab_preset:
                 _render_preset_picker(config)
@@ -206,6 +207,7 @@ def _render_add_form(config: AppConfig) -> None:
             config.watchlist.append(item)
             save_config(config)
             st.session_state["_pending_idx"] = len(config.watchlist) - 1
+            st.session_state["_expand_add"] = True
             st.rerun()
 
 
@@ -224,6 +226,7 @@ def _render_preset_picker(config: AppConfig) -> None:
                     config.watchlist.append(item)
                     save_config(config)
                     st.session_state["_pending_idx"] = len(config.watchlist) - 1
+                    st.session_state["_expand_add"] = True
                     st.rerun()
 
 
@@ -247,6 +250,7 @@ def _render_watchlist(config: AppConfig) -> WatchlistItem | None:
                 use_container_width=True,
             ):
                 st.session_state["_pending_idx"] = i
+                st.session_state.pop("_expand_add", None)
                 st.rerun()
         with col_del:
             if st.button("🗑", key=f"wl_del_{i}"):
@@ -324,7 +328,7 @@ def _load_and_display(
             return PriceHistory(result.df), result.last_modified, result.is_fallback
         except (ValueError, ConnectionError, OSError, TimeoutError) as e:
             logger.warning("Failed to fetch %s: %s", item.code, e)
-            st.error(f"{item.name} のデータを取得できませんでした。")
+            st.error(f"{item.name} のデータを取得できませんでした: {e}")
             return None, None, False
 
 
@@ -377,7 +381,7 @@ def _render_summary(item: WatchlistItem, history: PriceHistory, result: Analysis
     label_color = _LABEL_COLORS.get(result.label, "#6b7280")
     sym = _currency_symbol(item.category)
 
-    col1, col2, col3, col4, col5 = st.columns(5)
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
     with col1:
         st.metric("基準価額", f"{sym}{history.latest_close:,.0f}")
     with col2:
@@ -387,8 +391,11 @@ def _render_summary(item: WatchlistItem, history: PriceHistory, result: Analysis
         dd_pct = result.current_drawdown * 100
         st.metric("高値からの下落率", f"{dd_pct:+.1f}%")
     with col4:
-        st.metric("総合スコア", f"{result.total_score:.0f} / 100")
+        ath_dd_pct = result.ath_drawdown * 100
+        st.metric("最高値からの下落率", f"{ath_dd_pct:+.1f}%")
     with col5:
+        st.metric("総合スコア", f"{result.total_score:.0f} / 100")
+    with col6:
         st.markdown(
             f"<div style='text-align:center;padding:0.5rem;'>"
             f"<span style='font-size:0.8rem;color:#888;'>判定</span><br>"
