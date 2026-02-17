@@ -24,26 +24,31 @@ def calc_drawdown(closes: pd.Series) -> pd.Series:
     return (closes - rolling_max) / rolling_max.replace(0, np.nan)
 
 
-_RECENT_PEAK_WINDOWS = (20, 40, 60, 120, 252)
 _RECENT_PEAK_MIN_DROP = 0.02
 
 
 def calc_recent_peak(closes: pd.Series) -> float:
     """直近高値（現在の下落局面の起点）を返す。
 
-    短いウィンドウから順に最大値を探し、現在値より2%以上高い
-    最初のピークを返す。回復局面でも前回の山を正しく検出する。
+    末尾から遡り、ピークから2%以上下落した地点を探す。
+    そのピークが現在値より2%以上高ければ直近高値として返す。
+    回復局面では中間ラリーの山を正しく検出する。
     """
     values = closes.values
     n = len(values)
     if n < 2:
         return float(values[-1])
     latest = float(values[-1])
-    for window in _RECENT_PEAK_WINDOWS:
-        w = min(window, n)
-        peak = float(max(values[-w:]))
-        if peak > 0 and (peak - latest) / peak >= _RECENT_PEAK_MIN_DROP:
-            return peak
+    peak = latest
+    for i in range(n - 2, -1, -1):
+        val = float(values[i])
+        if val >= peak:
+            peak = val
+        elif peak > 0:
+            drop_from_peak = (peak - val) / peak
+            above_current = (peak - latest) / peak
+            if drop_from_peak >= _RECENT_PEAK_MIN_DROP and above_current >= _RECENT_PEAK_MIN_DROP:
+                return peak
     return float(max(values))
 
 

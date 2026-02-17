@@ -14,6 +14,7 @@ from dip_catcher.logic import (
     calc_daily_returns,
     calc_drawdown,
     calc_ma_deviation,
+    calc_recent_peak,
     calc_return_percentile,
     calc_rsi,
     find_drawdown_events,
@@ -52,6 +53,33 @@ class TestCalcDrawdown:
         dd = calc_drawdown(closes)
         assert dd.iloc[2] == pytest.approx(-0.25)
         assert dd.iloc[3] == pytest.approx(0.0)
+
+
+class TestCalcRecentPeak:
+    def test_intermediate_rally_returns_local_peak(self) -> None:
+        """ATH → 大幅下落 → 中間ラリー → 現在: 中間ラリーの山を返す。"""
+        # 48654 → 40000 → 47112 → 45081
+        values = [48654, 47000, 44000, 40000, 43000, 46000, 47112, 46000, 45081]
+        closes, _ = _make_closes(values)
+        assert calc_recent_peak(closes) == pytest.approx(47112)
+
+    def test_monotonic_decline_returns_start(self) -> None:
+        """単調下落: 先頭のピーク（=ATH）を返す。"""
+        values = [48654, 47000, 46000, 45081]
+        closes, _ = _make_closes(values)
+        assert calc_recent_peak(closes) == pytest.approx(48654)
+
+    def test_recovery_without_peak_returns_ath(self) -> None:
+        """ATH → 大幅下落 → 回復中（中間ピークなし）: ATHを返す。"""
+        values = [48654, 44000, 40000, 42000, 45081]
+        closes, _ = _make_closes(values)
+        assert calc_recent_peak(closes) == pytest.approx(48654)
+
+    def test_at_ath_returns_current(self) -> None:
+        """現在がATHなら現在値を返す。"""
+        values = [40000, 42000, 45000, 48000, 50000]
+        closes, _ = _make_closes(values)
+        assert calc_recent_peak(closes) == pytest.approx(50000)
 
 
 class TestCalcDailyReturns:
