@@ -24,26 +24,27 @@ def calc_drawdown(closes: pd.Series) -> pd.Series:
     return (closes - rolling_max) / rolling_max.replace(0, np.nan)
 
 
-def calc_recent_peak(closes: pd.Series) -> float:
-    """現在の下落局面の起点（直近高値）を返す。
+_RECENT_PEAK_WINDOWS = (20, 40, 60, 120, 252)
+_RECENT_PEAK_MIN_DROP = 0.02
 
-    末尾から遡り、短期的な揺れ（1%以内の戻し）を無視して
-    直近の実質的なピークを検出する。
-    現在値がピークと同じかそれ以上の場合は現在値を返す。
+
+def calc_recent_peak(closes: pd.Series) -> float:
+    """直近高値（現在の下落局面の起点）を返す。
+
+    短いウィンドウから順に最大値を探し、現在値より2%以上高い
+    最初のピークを返す。回復局面でも前回の山を正しく検出する。
     """
     values = closes.values
     n = len(values)
-    if n == 0:
-        return 0.0
-    latest = values[-1]
-    peak = latest
-    for i in range(n - 2, -1, -1):
-        if values[i] > peak:
-            peak = values[i]
-        elif peak > 0 and (peak - values[i]) / peak > 0.01:
-            # ピークから1%超下がった地点 = ピークは確定
-            return float(peak)
-    return float(peak)
+    if n < 2:
+        return float(values[-1])
+    latest = float(values[-1])
+    for window in _RECENT_PEAK_WINDOWS:
+        w = min(window, n)
+        peak = float(max(values[-w:]))
+        if peak > 0 and (peak - latest) / peak >= _RECENT_PEAK_MIN_DROP:
+            return peak
+    return float(max(values))
 
 
 def calc_daily_returns(closes: pd.Series) -> pd.Series:
@@ -227,7 +228,7 @@ def find_drawdown_events(
 
 # スコアリング境界値の定数
 _DD_MAX = 0.30  # この深度で100点
-_RARITY_UPPER = 50.0  # この値以上はスコア0
+_RARITY_UPPER = 20.0  # この値以上はスコア0
 _RSI_UPPER = 70.0  # この値以上はスコア0
 _RSI_LOWER = 20.0  # この値以下はスコア100
 _MA_DEV_MAX = 0.10  # この乖離率で100点
@@ -281,7 +282,7 @@ def _score_rarity(percentile: float, window: int) -> float:
     """騰落スコアを計算する。
 
     パーセンタイルが低いほど高スコア。
-    50%以上 → 0点, 25% → 50点, 0% → 100点（線形補間）
+    20%以上 → 0点, 10% → 50点, 0% → 100点（線形補間）
     安定化パターン（window > 1）はボーナス、パニック渦中は減点。
     """
     if percentile >= _RARITY_UPPER:
