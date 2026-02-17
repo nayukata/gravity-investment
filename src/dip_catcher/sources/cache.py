@@ -244,6 +244,9 @@ class CachedSource:
         df.to_csv(path, index=False)
 
     def _next_fetch_start(self, cached_df: pd.DataFrame, original_start: date) -> date:
+        cache_start = cached_df["date"].min().date()
+        if cache_start > original_start:
+            return original_start
         latest = cached_df["date"].max()
         next_day = (latest + pd.Timedelta(days=1)).date()
         return max(next_day, original_start)

@@ -318,13 +318,18 @@ def _load_and_display(
     cached = source.load_cache(item.code, start, end)
 
     if cached is not None:
-        # Step 2: 更新が必要かチェック → 必要ならバックグラウンドで更新
-        if source.needs_refresh(item.code):
-            _background_refresh(item.code, item.category.value, start, end)
-        return PriceHistory(cached.df), cached.last_modified, cached.is_fallback
+        # 期間が十分カバーされているかチェック
+        cache_start = cached.df["date"].min().date()
+        missing_days = (cache_start - start).days
+        if missing_days <= 30:
+            # Step 2: 更新が必要かチェック → 必要ならバックグラウンドで更新
+            if source.needs_refresh(item.code):
+                _background_refresh(item.code, item.category.value, start, end)
+            return PriceHistory(cached.df), cached.last_modified, cached.is_fallback
 
-    # Step 3: キャッシュなし → 初回は同期取得（避けられない）
-    with st.spinner("初回データ取得中…"):
+    # Step 3: キャッシュなし or 期間不足 → 同期取得
+    spinner_msg = "データ取得中…" if cached is not None else "初回データ取得中…"
+    with st.spinner(spinner_msg):
         try:
             result = source.fetch(item.code, start, end)
             return PriceHistory(result.df), result.last_modified, result.is_fallback
