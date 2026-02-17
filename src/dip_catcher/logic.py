@@ -24,6 +24,28 @@ def calc_drawdown(closes: pd.Series) -> pd.Series:
     return (closes - rolling_max) / rolling_max.replace(0, np.nan)
 
 
+def calc_recent_peak(closes: pd.Series) -> float:
+    """現在の下落局面の起点（直近高値）を返す。
+
+    末尾から遡り、短期的な揺れ（1%以内の戻し）を無視して
+    直近の実質的なピークを検出する。
+    現在値がピークと同じかそれ以上の場合は現在値を返す。
+    """
+    values = closes.values
+    n = len(values)
+    if n == 0:
+        return 0.0
+    latest = values[-1]
+    peak = latest
+    for i in range(n - 2, -1, -1):
+        if values[i] > peak:
+            peak = values[i]
+        elif peak > 0 and (peak - values[i]) / peak > 0.01:
+            # ピークから1%超下がった地点 = ピークは確定
+            return float(peak)
+    return float(peak)
+
+
 def calc_daily_returns(closes: pd.Series) -> pd.Series:
     """日次騰落率を計算する。"""
     return closes.pct_change().dropna()

@@ -23,6 +23,7 @@ from dip_catcher.logic import (
     calc_daily_returns,
     calc_drawdown,
     calc_ma_deviation,
+    calc_recent_peak,
     calc_rsi,
 )
 from dip_catcher.models import (
@@ -383,8 +384,7 @@ def _render_summary(item: WatchlistItem, history: PriceHistory, result: Analysis
     sym = _currency_symbol(item.category)
 
     closes = history.df["close"]
-    recent_window = min(252, len(closes))
-    recent_high = float(closes.iloc[-recent_window:].max())
+    recent_high = calc_recent_peak(closes)
     recent_dd = (history.latest_close - recent_high) / recent_high if recent_high > 0 else 0.0
 
     col1, col2, col3, col4, col5, col6 = st.columns(6)
@@ -395,7 +395,7 @@ def _render_summary(item: WatchlistItem, history: PriceHistory, result: Analysis
         st.metric("前日比", f"{daily_ret_pct:+.2f}%")
     with col3:
         recent_dd_pct = recent_dd * 100
-        st.metric("52週高値からの下落率", f"{recent_dd_pct:+.1f}%")
+        st.metric("直近高値からの下落率", f"{recent_dd_pct:+.1f}%")
     with col4:
         dd_pct = result.current_drawdown * 100
         st.metric("最高値からの下落率", f"{dd_pct:+.1f}%")
