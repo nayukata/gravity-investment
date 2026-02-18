@@ -195,7 +195,7 @@ class CachedSource:
         cached_df = self._load_cache(cache_path)
 
         if cached_df is not None:
-            fetch_start = self._next_fetch_start(cached_df, start)
+            fetch_start = self._next_fetch_start(cached_df, start, cache_path)
             if fetch_start > end:
                 logger.info("Cache is up-to-date for %s", code)
                 # mtime を更新して「確認済み」を記録する
@@ -243,10 +243,16 @@ class CachedSource:
     def _save_cache(self, path: Path, df: pd.DataFrame) -> None:
         df.to_csv(path, index=False)
 
-    def _next_fetch_start(self, cached_df: pd.DataFrame, original_start: date) -> date:
+    def _next_fetch_start(
+        self, cached_df: pd.DataFrame, original_start: date, cache_path: Path,
+    ) -> date:
         cache_start = cached_df["date"].min().date()
         if cache_start > original_start:
-            return original_start
+            mtime = datetime.fromtimestamp(cache_path.stat().st_mtime)
+            if (datetime.now() - mtime) < MIN_REFRESH_INTERVAL:
+                pass  # 最近取得済み → ソースに古いデータがない
+            else:
+                return original_start
         latest = cached_df["date"].max()
         next_day = (latest + pd.Timedelta(days=1)).date()
         return max(next_day, original_start)

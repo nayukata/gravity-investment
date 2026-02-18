@@ -321,7 +321,11 @@ def _load_and_display(
         # 期間が十分カバーされているかチェック
         cache_start = cached.df["date"].min().date()
         missing_days = (cache_start - start).days
-        if missing_days <= 30:
+        recently_fetched = (
+            cached.last_modified is not None
+            and (datetime.now() - cached.last_modified) < timedelta(hours=3)
+        )
+        if missing_days <= 30 or recently_fetched:
             # Step 2: 更新が必要かチェック → 必要ならバックグラウンドで更新
             if source.needs_refresh(item.code):
                 _background_refresh(item.code, item.category.value, start, end)
