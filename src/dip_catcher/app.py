@@ -442,15 +442,19 @@ def _render_main_chart(dates: pd.Series, closes: pd.Series, config: AnalysisConf
     )
 
     # 移動平均
-    ma = closes.rolling(window=config.ma_days, min_periods=config.ma_days).mean()
-    fig.add_trace(
-        go.Scatter(
-            x=dates, y=ma, name=f"移動平均 ({config.ma_days}日)",
-            line=dict(color="#f59e0b", width=1, dash="dash"),
-            hovertemplate="%{y:,.0f}<extra></extra>",
-        ),
-        row=1, col=1,
-    )
+    _ma_lines = [(25, "#10b981", "dot")]
+    if config.ma_days != 25:
+        _ma_lines.append((config.ma_days, "#f59e0b", "dash"))
+    for window, color, dash in _ma_lines:
+        ma = closes.rolling(window=window, min_periods=window).mean()
+        fig.add_trace(
+            go.Scatter(
+                x=dates, y=ma, name=f"{window}日平均",
+                line=dict(color=color, width=1, dash=dash),
+                hovertemplate="%{y:,.0f}<extra></extra>",
+            ),
+            row=1, col=1,
+        )
 
     # ボリンジャーバンド
     bb = calc_bollinger_bands(closes, config.bb_period, config.bb_std)
